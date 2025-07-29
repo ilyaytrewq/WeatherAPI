@@ -30,7 +30,7 @@ WeatherAgent/
 1. Склонируйте репозиторий и перейдите в папку проекта:
 
    ```bash
-   git clone <repo-url>
+   git clone https://github.com/ilyaytrewq/WeatherAPI.git
    cd WeatherAgent
    ```
 2. Поднимите все сервисы командой:
@@ -154,5 +154,5 @@ GET /v1.0.0/get_user_data/email=user@example.com
 * Подключение к ClickHouse:
 
   ```bash
-  docker compose exec clickhouse clickhouse-client --user default
+  docker compose exec clickhouse clickhouse-client --user logs
   ```

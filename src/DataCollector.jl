@@ -8,7 +8,8 @@ using Base.Threads
 
 const API_WEATHER_URL = "https://pro.openweathermap.org/data/2.5/weather?"
 const API_COORDINATES_URL = "http://api.openweathermap.org/geo/1.0/direct?"
-const API_WEATHER_KEY = "APPID=90685795f8d642e181dc95363883e296"
+const API_WEATHER_KEY = "APPID=" * get(ENV, "API_WEATHER_KEY", "")
+
 CITIES = Set{String}() #cities for analysis 
 
 const client = Ref{OhMyCH.HttpClient}()
