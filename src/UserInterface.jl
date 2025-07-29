@@ -1,14 +1,17 @@
 module UserInterface
 
+using ..DataCollector
+
 using SHA
 using Serde
 using LibPQ
 using HTTP
 using Tables
+using JSON 
 
 const connection = Ref{LibPQ.Connection}()
 
-struct UserData
+mutable struct UserData
     email::String
     password::String
     telegram::String
@@ -36,29 +39,32 @@ function init_postgres_db()
             email VARCHAR(255) NOT NULL UNIQUE,
             password VARCHAR(255) NOT NULL,
             telegram VARCHAR(20) DEFAULT NULL,
-            ways_to_send VARCHAR(10) NOT NULL.
+            ways_to_send VARCHAR(10) NOT NULL,
             cities TEXT[] DEFAULT '{}'
         );
         """)
 end
 
-function deser_with_exception(::Type{T}, req::HTTP.Request)::T where {T<:AbstractDict, T<:UserData}
-    try
-        new_user = deser_json(typeof(T), String(req.body))
-    catch e
-        @error "JSON parse error: $e"
-        return HTTP.Response(400, "Incorrect data format $e")
-    end
-    return new_user
-end
-
 function create_user(req::HTTP.Request)
-    
-    new_user = deser_with_exception(UserData, req) #get UserData from http request
+    new_user = try
+        deser_json(UserData, String(req.body))
+    catch e
+        @error "JSON parse error: $(string(e))"
+        return HTTP.Response(400, "Incorrect data format $(string(e))")
+    end
     new_user.password = bytes2hex(sha256(new_user.password)) #hash password
+
+
+    for city in new_user.cities # check all strings are cities
+        if !DataCollector.is_valid_city(city)
+            return HTTP.Response(400, "Incorrect city: $(city)") 
+        end
+    end
+
 
     @info "creating new user: $(new_user.email)"
     
+
     try    #insert user in db
         LibPQ.execute(
             connection[],
@@ -66,22 +72,33 @@ function create_user(req::HTTP.Request)
             (new_user.email, new_user.password, new_user.telegram, new_user.ways_to_send, new_user.cities)
         )
     catch e 
-        @error "Database insert error: $e"
+        @error "Database insert error: $(string(e))"
         
-        if occursin("duplicate key value violates unique constraint", String(e))
+        if occursin("duplicate key value violates unique constraint", string(e))
             return HTTP.Response(409, "User with this email already exists")
         else
             return HTTP.Response(500, "Internal server error")
         end
-
     end
+
+
+    DataCollector.add_cities(new_user.cities)
+
+
     @info "user created"
+
 
     return HTTP.Response(201, "user created")
 end
 
 function change_user_data(req::HTTP.Request)
-    data = deser_with_exception(Dict{String, Any}, req)
+    data = try
+        JSON.parse(String(req.body))
+    catch e
+        @error "JSON parse error: $(string(e))"
+        return HTTP.Response(400, "Incorrect data format $(string(e))")
+    end
+
     if !haskey(data, "email") || !haskey(data, "password")
         return HTTP.Response(400, "Missing required fields: email or password")
     end
@@ -92,6 +109,14 @@ function change_user_data(req::HTTP.Request)
     @info "change user's data: $user_email"
 
     data["password"] = bytes2hex(sha256(data["password"]))
+
+    if haskey(data, "cities")
+        for city in data["cities"] # check all strings are cities
+            if !DataCollector.is_valid_city(city)
+                return HTTP.Response(400, "Incorrect city: $(city)") 
+            end
+        end
+    end
 
     # create sql query
     keys = Vector{String}()
@@ -123,14 +148,24 @@ function change_user_data(req::HTTP.Request)
             return HTTP.Response(500, "Internal server error")
         end
     end
+    
     @info "user data updated"
+    if haskey(data, "cities")
+        DataCollector.add_cities(data["cities"])
+    end
 
     return HTTP.Response(200, "Data updated successfully")
 end
 
 
 function delete_user(req::HTTP.Request)
-    data = deser_with_exception(Dict{String, String}, req)
+    data = try
+        deser_json(Dict{String, String}, String(req.body))
+    catch e
+        @error "JSON parse error: $(string(e))"
+        return HTTP.Response(400, "Incorrect data format $(string(e))")
+    end
+
     if !haskey(data, "email")
         return HTTP.Response(400, "Missing required fields")
     end
@@ -142,7 +177,7 @@ function delete_user(req::HTTP.Request)
             [data["email"]]
         )
     catch e
-        @error "Database delete error: $e"
+        @error "Database delete error: $(string(e))"
         return HTTP.Response(500, "Internal server error")
     end
 
@@ -167,7 +202,7 @@ function get_user_data(req::HTTP.Request)
             return HTTP.Response(404, "User not found")
         end
     catch e
-        @error "Database select error: $e"
+        @error "Database select error: $(string(e))"
         return HTTP.Response(500, "Internal server error")
     end
 

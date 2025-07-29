@@ -1,7 +1,6 @@
+include("DataCollector.jl")
 include("UserInterface.jl")
 include("Handlers.jl")
-include("DataCollector.jl")
-
 
 using HTTP
 using .Handlers
@@ -13,7 +12,6 @@ function main()
     UserInterface.init_postgres_db()
     DataCollector.init_clickhouse_db()
     
-
 
     DataCollector.start_periodic_task(120)
 
@@ -42,6 +40,7 @@ function main()
     finally
         # Корректное завершение
         close(server)
+        close(client[])
         @info "Server stopped"
     end
 end

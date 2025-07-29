@@ -28,6 +28,27 @@ struct city_type
     city::String
 end
 
+function is_valid_city(city::String)::Bool
+    url_string = API_COORDINATES_URL * "q=$(city)&limit=1&" * API_WEATHER_KEY
+    try
+        response = http_request(
+            "GET", 
+            url_string;
+            headers = Pair{String, String}[
+                "Accept" => "application/json",  
+                "User-Agent" => "WeatherApp/1.0"
+            ],
+            read_timeout = 5,
+            connect_timeout = 10,
+            retry = 10
+        )
+        arr = JSON.parse(String(http_body(response)))
+        return isa(arr, Vector) && length(arr) > 0 && isa(arr[1], Dict) && haskey(arr[1], "lat") && haskey(arr[1], "lon")
+    catch e
+        return false
+    end
+end
+
 function get_coordinates_by_city_name(city::String)
     url_string = API_COORDINATES_URL * "q=$(city)&limit=1&" * API_WEATHER_KEY
     @info "url: $(url_string)"
@@ -76,20 +97,41 @@ end
 function get_weather_responses(cities)
     responses = Vector{weather_type}()
 
-    for city in cities
-        data = get_weather_from_api(Dict("city" => city))
+    # for city in cities
+    #     data = get_weather_from_api(Dict("city" => city))
 
-        response = weather_type(
-            Second(data["dt"]) + DateTime(1970, 1, 1),
-            city,
-            data["main"]["temp"],
-            data["main"]["feels_like"],
-            data["main"]["pressure"],
-            data["wind"]["speed"],
-            data["wind"]["deg"]
-        )
+    #     response = weather_type(
+    #         Second(data["dt"]) + DateTime(1970, 1, 1),
+    #         city,
+    #         data["main"]["temp"],
+    #         data["main"]["feels_like"],
+    #         data["main"]["pressure"],
+    #         data["wind"]["speed"],
+    #         data["wind"]["deg"]
+    #     )
 
-        push!(responses, response)
+    #     push!(responses, response)
+    # end
+
+    cities_vector = collect(cities)
+    tasks = [@spawn get_weather_from_api(Dict("city" => city)) for city in cities_vector]
+    
+    for (i, task) in enumerate(tasks)
+        try
+            data = fetch(task)
+            response = weather_type(
+                Second(data["dt"]) + DateTime(1970, 1, 1),
+                cities_vector[i],
+                data["main"]["temp"],
+                data["main"]["feels_like"],
+                data["main"]["pressure"],
+                data["wind"]["speed"],
+                data["wind"]["deg"]
+            )
+            push!(responses, response)
+        catch e
+            @error "Failed to get weather for city $(cities_vector[i]): $(string(e))"
+        end
     end
 
     return responses
@@ -98,45 +140,98 @@ end
 
 function WriteDataToTable()
     @info "start write data"
-    responses = get_weather_responses(CITIES)
-    @info "data is ready"
+    
+    # responses = get_weather_responses(CITIES)
+    # @info "data is ready"
+    # if !isempty(responses)
+    #     OhMyCH.insert(
+    #         client[],
+    #         "INSERT INTO weather_metrics (timestamp, city, temp, app_temp, pressure, wind_speed, wind_deg)",
+    #         responses
+    #     )
+    # end
+    # @info "data is written"
 
-    if !isempty(responses)
-        OhMyCH.insert(
-            client[],
-            "INSERT INTO weather_metrics (timestamp, city, temp, app_temp, pressure, wind_speed, wind_deg)",
-            responses
-        )
+    # Новый асинхронный код
+    data_task = @spawn get_weather_responses(CITIES)
+    
+    responses = try
+        fetch(data_task)
+        @info "data is ready"
+    catch e
+        @error "Failed to get weather data: $(string(e))"
+        throw(e)
     end
 
-    @info "data is written"
-
+    if !isempty(responses)
+        @async begin
+            try
+                OhMyCH.insert(
+                    client[],
+                    "INSERT INTO weather_metrics (timestamp, city, temp, app_temp, pressure, wind_speed, wind_deg)",
+                    responses
+                )
+                @info "data is written"
+            catch e
+                @error "Failed to write data to ClickHouse: $(string(e))"
+                throw(e)
+            end
+        end
+    end
 end
 
 function add_cities(cities::Vector{String})
-    println(cities)
-    
-    new_cities = Vector{String}()
-    new_cities_structure = Vector{city_type}()
+    # new_cities = Vector{String}()
+    # new_cities_structure = Vector{city_type}()
+    # for city in cities
+    #     if !in(city, CITIES)
+    #         push!(new_cities, city)
+    #         push!(new_cities_structure, city_type(city))
+    #     end 
+    # end
+    # union!(CITIES, new_cities)
+    # OhMyCH.insert(
+    #     client[],
+    #     "INSERT INTO cities (city)",
+    #     new_cities_structure
+    # )
+    # @info "cities are added"
+    # @info "Added cities: $new_cities. Total: $(length(CITIES))"
+    # return HTTP.Response(200, "Cities updated successfully\n")
 
-    for city in cities
-        if !in(city, CITIES)
-            push!(new_cities, city)
-            push!(new_cities_structure, city_type(city))
-        end 
+    @async begin
+        try
+            new_cities = Vector{String}()
+            new_cities_structure = Vector{city_type}()
+
+            for city in cities
+                if !in(city, CITIES)
+                    push!(new_cities, city)
+                    push!(new_cities_structure, city_type(city))
+                end 
+            end
+
+            if !isempty(new_cities)
+                union!(CITIES, new_cities)
+
+                OhMyCH.insert(
+                    client[],
+                    "INSERT INTO cities (city)",
+                    new_cities_structure
+                )
+
+                @info "cities are added"
+                @info "Added cities: $new_cities. Total: $(length(CITIES))"
+            end
+        catch e
+            @error "Failed to add cities: $(string(e))"
+            throw(e)
+        end
+
+        @info "cities are added"
     end
-
-    union!(CITIES, new_cities)
-
-    OhMyCH.insert(
-        client[],
-        "INSERT INTO cities (city)",
-        new_cities_structure
-    )
-
-    @info "cities are added"
-    @info "Added cities: $new_cities. Total: $(length(CITIES))"
-    return HTTP.Response(200, "Cities updated successfully\n")    
+    
+    return HTTP.Response(200, "Cities updated successfully")    
 end
 
 
@@ -195,9 +290,6 @@ function init_clickhouse_db()
         ORDER BY city
         """
     )
-
-
-    add_cities(String["Moscow", "Ufa", "London", "Dubai"])
 
     data = OhMyCH.query(
         client[], 
