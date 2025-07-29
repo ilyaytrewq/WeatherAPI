@@ -112,6 +112,9 @@ function change_user_data(req::HTTP.Request)
 
     if haskey(data, "cities")
         for city in data["cities"] # check all strings are cities
+            if !isa(city, String)
+                return HTTP.Response(400, "Incorrect city type: $(city), $(typeof(city))") 
+            end
             if !DataCollector.is_valid_city(city)
                 return HTTP.Response(400, "Incorrect city: $(city)") 
             end
@@ -120,7 +123,7 @@ function change_user_data(req::HTTP.Request)
 
     # create sql query
     keys = Vector{String}()
-    values = Vector{String}()
+    values = Vector{Any}()
 
     #add data in format (value, key = index of value)
     for (k, v) in data
@@ -149,10 +152,12 @@ function change_user_data(req::HTTP.Request)
         end
     end
     
-    @info "user data updated"
+    
     if haskey(data, "cities")
-        DataCollector.add_cities(data["cities"])
+        DataCollector.add_cities(convert(Vector{String}, data["cities"]))
     end
+
+    @info "user data updated"
 
     return HTTP.Response(200, "Data updated successfully")
 end
