@@ -1,12 +1,13 @@
-module UserInterface 
+module UserInterface
 
 using Serde
 using LibPQ
 using HTTP
+using Tables
 
 const connection = Ref{LibPQ.Connection}()
 
-struct user
+struct UserData
     email::String
     password::String
     telegram::String
@@ -28,20 +29,18 @@ function init_postgres_db()
         port=$port
     """)
 
-    @info "connection to Postgres is ok: $(connection)"
-
     LibPQ.execute(connection[], """
-        CREATE TABLE IF NOT EXISTS users (
-            email VARCHAR(255) NOT NULL UNIQUE,
-            password VARCHAR(255) NOT NULL,
-            telegram VARCHAR(20) DEFAULT NULL,
-            ways_to_send VARCHAR(10) NOT NULL
-        );
+    CREATE TABLE IF NOT EXISTS users (
+        email VARCHAR(255) NOT NULL UNIQUE,
+        password VARCHAR(255) NOT NULL,
+        telegram VARCHAR(20) DEFAULT NULL,
+        ways_to_send VARCHAR(10) NOT NULL
+    );
     """)
 end
 
 function create_user(req::HTTP.Request)
-    new_user = deser_json(user, String(req.body))
+    new_user = deser_json(UserData, String(req.body))
 
     @info "creating new user: $new_user"
     
