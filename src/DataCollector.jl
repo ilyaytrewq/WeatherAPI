@@ -50,12 +50,12 @@ function is_valid_city(city::String)::Bool
 end
 
 function get_coordinates_by_city_name(city::String)
-    url_string = API_COORDINATES_URL * "q=$(city)&limit=1&"
+    url_string = API_COORDINATES_URL * "q=$(city)&limit=1&" * API_WEATHER_KEY
     @info "url: $(url_string)"
-    try
-        response = http_request(
+    response = try
+         http_request(
             "GET", 
-            url_string * API_WEATHER_KEY;
+            url_string;
             headers = Pair{String, String}[
                 "Accept" => "application/json",  
                 "User-Agent" => "WeatherAPI/1.0"
@@ -65,7 +65,7 @@ function get_coordinates_by_city_name(city::String)
             retry = 10
         )
     catch e 
-        @error "Failed to get coordinates for city: $city, url: $url_string"
+        @error "Failed to get coordinates for city: $city, error: $(string(e))"
         throw(e)
     end
     return JSON.parse(String(http_body(response)))[1]
@@ -74,7 +74,12 @@ end
 function get_weather_from_api(parameters::Dict{String, String}) 
 
     if haskey(parameters, "city")
-        parameters = get_coordinates_by_city_name(parameters["city"])
+        try
+            parameters = get_coordinates_by_city_name(parameters["city"])
+        catch e
+            @error "Failed to get coordinates for city $(parameters["city"]): $(string(e))"
+            throw(e)
+        end
     end
 
 
@@ -82,9 +87,9 @@ function get_weather_from_api(parameters::Dict{String, String})
 
     @info "url: $(url_string)"
 
-    try
-        response = http_request(
-            "GET", 
+    response = try
+         http_request(
+            "GET",
             url_string * API_WEATHER_KEY;
             headers = Pair{String, String}[
                 "Accept" => "application/json",  
@@ -95,7 +100,7 @@ function get_weather_from_api(parameters::Dict{String, String})
             retry = 10
         )
     catch e 
-        @error "Failed to get weather to city with parameters: $parameters"
+        @error "Failed to get weather for parameters: $parameters, error: $(string(e))"
         throw(e)
     end
 
@@ -125,6 +130,9 @@ function get_weather_responses(cities)
             push!(responses, response)
         catch e
             @error "Failed to get weather for city $(cities_vector[i]): $(string(e))"
+            if e isa TaskFailedException
+                @error "Task failed with exception: $(e.task.exception)"
+            end
         end
     end
 
@@ -136,13 +144,7 @@ function WriteDataToTable()
     @info "start write data"
     data_task = @spawn get_weather_responses(CITIES)
     
-    responses = try
-        fetch(data_task)
-        @info "data is ready"
-    catch e
-        @error "Failed to get weather data: $(string(e))"
-        throw(e)
-    end
+    responses = fetch(data_task)
 
     if !isempty(responses)
         @async begin
@@ -173,6 +175,9 @@ function add_cities(cities::Vector{String})
                     push!(new_cities_structure, city_type(city))
                 end 
             end
+
+            println(new_cities)
+            union!(CITIES, new_cities)
 
             if !isempty(new_cities)
                 union!(CITIES, new_cities)

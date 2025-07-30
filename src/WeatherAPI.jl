@@ -13,7 +13,7 @@ function main()
     DataCollector.init_clickhouse_db()
     
 
-    DataCollector.start_periodic_task(120)
+    DataCollector.start_periodic_task(10)
 
 
     server = HTTP.serve!(
