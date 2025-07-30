@@ -32,13 +32,11 @@ services:
 
 
 
-  weather-api:
+  data-service:
     build:
-      context: .
+      context: ./data-service
     ports:
       - '8080:8080'
-    volumes:
-      - ./src:/app/src
     depends_on:
       - postgres
       - clickhouse
