@@ -34,7 +34,7 @@ WeatherAgent/
    cd WeatherAgent
    ```
 2. Поднимите все сервисы командой:
-
+    Замените API_WEATHER_KEY собственным ключем с https://openweathermap.org/api
    ```bash
    docker compose up --build
    ```
