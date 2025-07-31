@@ -53,7 +53,7 @@ services:
       CLICKHOUSE_PASSWORD: logs
       CLICKHOUSE_DB:       logs
 
-      API_WEATHER_KEY: 90685795f8d642e181dc95363883e296
+      API_WEATHER_KEY:  ${{ secrets.API_WEATHER_KEY }}
 
 volumes:
   postgres:
