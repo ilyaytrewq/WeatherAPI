@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:17.5
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER:     test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB:       test_user_db
+    volumes:
+      - postgres:/var/lib/postgresql/data
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    ports:
+      - "8123:8123"
+      - "9090:9000"
+      - "9009:9009"
+    environment:
+      # Default user and database will be created using `init-defaults.sh` script
+      CLICKHOUSE_DB: logs
+      CLICKHOUSE_USER: logs
+      CLICKHOUSE_PASSWORD: logs
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    # hostname: clickhouse-0.localhost
+    cap_add:
+      - SYS_NICE
+    volumes:
+      - clickhouse:/var/lib/clickhouse
+      # - ./clickhouse/init-defaults.sh:/docker-entrypoint-initdb.d/init-defaults.sh:ro
+#       - clickhouse:/var/lib/clickhouse
+
+
+
+  data-service:
+    build:
+      context: .
+    ports:
+      - '8080:8080'
+    depends_on:
+      - postgres
+      - clickhouse
+    environment:
+      POSTGRES_HOST:     postgres
+      POSTGRES_PORT:     5432
+      POSTGRES_USER:     test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_NAME:     test_user_db
+
+      CLICKHOUSE_HOST:     clickhouse
+      CLICKHOUSE_PORT:     8123  # Внутренний порт
+      CLICKHOUSE_USER:     logs
+      CLICKHOUSE_PASSWORD: logs
+      CLICKHOUSE_DB:       logs
+
+      API_WEATHER_KEY: 90685795f8d642e181dc95363883e296
+
+volumes:
+  postgres:
+    driver: local
+  clickhouse:
+    driver: local
